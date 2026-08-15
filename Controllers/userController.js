@@ -8,8 +8,12 @@ import { generateAccessToken, generateRefreshToken } from "../utils/Tokenization
 export const registerUser = async (req, res) => {
     try {
         const { firstname, lastname, email, password, phno } = req.body;
-        const userExists = await User.findOne({ email });
-        const phoneExists = await User.findOne({ phno });
+
+        const [userExists, phoneExists] = await Promise.all([
+            User.findOne({ email }),
+            User.findOne({ phno })
+        ]);
+
         if (phoneExists) return res.status(400).json({ message: "User with that Phone Number Already in Database!" });
         if (!firstname.match(/^[a-zA-Z\s]+$/)) return res.status(400).json({ message: "Invalid Firstname!" });
         if (lastname && !lastname.match(/^[a-zA-Z\s]+$/)) return res.status(400).json({ message: "Invalid Lastname!" });
@@ -26,8 +30,11 @@ export const registerUser = async (req, res) => {
         const otp = OTP_gen();
         user.otp = otp;
         user.otp_expiry = Date.now() + 5 * 60 * 1000;
-        await user.save();
-        await sendOTPEmail(email, otp);
+
+        await Promise.all([
+            user.save(),
+            sendOTPEmail(email, otp)
+        ]);
 
         return res.status(200).json({ success: true, user, message: "User Registered Successfully!" });
     } catch (error) {
@@ -45,10 +52,11 @@ export const Loginuser = async (req, res) => {
         if (!user.isverified) return res.status(401).json({ message: "Please verify Your email first!", verified: false, email: user.email });
         if (!user.isActive) return res.status(403).json({ message: "Your account is not active.", active: false });
 
-        const accessToken = generateAccessToken(user);
-        const refreshToken = generateRefreshToken(user);
+        const [accessToken, refreshToken] = await Promise.all([
+            generateAccessToken(user),
+            generateRefreshToken(user)
+        ]);
 
-        
         user.refreshToken = refreshToken;
         user.refreshTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
         await user.save();
@@ -60,12 +68,7 @@ export const Loginuser = async (req, res) => {
             maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
-        return res.status(200).json({
-            success: true,
-            message: "User Logged in Successfully!",
-            accessToken,
-            user,
-        });
+        return res.status(200).json({ success: true, message: "User Logged in Successfully!", accessToken, user });
     } catch (error) {
         return res.status(500).json({ message: error.message });
     }
@@ -81,7 +84,6 @@ export const refreshToken = async (req, res) => {
             decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
         } catch (error) {
             if (error.name === "TokenExpiredError") {
-                
                 const expiredDecoded = jwt.decode(token);
                 if (expiredDecoded?.id) {
                     await User.findByIdAndUpdate(expiredDecoded.id, {
@@ -89,42 +91,21 @@ export const refreshToken = async (req, res) => {
                         refreshTokenExpiry: null
                     });
                 }
-                return res.status(403).json({
-                    success: false,
-                    message: "Refresh token expired. Please login again.",
-                });
+                return res.status(403).json({ success: false, message: "Refresh token expired. Please login again." });
             }
             return res.status(403).json({ success: false, message: "Invalid refresh token." });
         }
 
         const user = await User.findById(decoded.id);
         if (!user) return res.status(404).json({ success: false, message: "User not found." });
-
-        
-        if (user.refreshToken !== token) {
-            return res.status(403).json({
-                success: false,
-                message: "Refresh token mismatch. Please login again."
-            });
-        }
-
-        
+        if (user.refreshToken !== token) return res.status(403).json({ success: false, message: "Refresh token mismatch. Please login again." });
         if (user.refreshTokenExpiry && user.refreshTokenExpiry < new Date()) {
-            user.refreshToken = null;
-            user.refreshTokenExpiry = null;
-            await user.save();
-            return res.status(403).json({
-                success: false,
-                message: "Refresh token expired. Please login again."
-            });
+            await User.findByIdAndUpdate(user._id, { refreshToken: null, refreshTokenExpiry: null });
+            return res.status(403).json({ success: false, message: "Refresh token expired. Please login again." });
         }
 
         const newAccessToken = generateAccessToken(user);
-
-        return res.status(200).json({
-            success: true,
-            accessToken: newAccessToken,
-        });
+        return res.status(200).json({ success: true, accessToken: newAccessToken });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
     }
@@ -134,13 +115,11 @@ export const logout = async (req, res) => {
     try {
         const token = req.cookies?.refreshToken;
         if (token) {
-            
-            const user = await User.findOne({ refreshToken: token });
-            if (user) {
-                user.refreshToken = null;
-                user.refreshTokenExpiry = null;
-                await user.save();
-            }
+
+            await User.findOneAndUpdate(
+                { refreshToken: token },
+                { refreshToken: null, refreshTokenExpiry: null }
+            );
         }
         res.clearCookie("refreshToken");
         return res.status(200).json({ success: true, message: "Logged out successfully." });
@@ -209,10 +188,10 @@ export const verifyOTP = async (req, res) => {
         if (existingmail.otp_expiry < Date.now()) return res.status(400).json({ success: false, message: "OTP Expired!" });
         if (existingmail.otp !== otp) return res.status(400).json({ success: false, message: "Invalid OTP" });
 
-        existingmail.isverified = true;
-        existingmail.otp = null;
-        existingmail.otp_expiry = null;
-        await existingmail.save();
+        await User.findOneAndUpdate(
+            { email },
+            { isverified: true, otp: null, otp_expiry: null }
+        );
 
         return res.status(200).json({ success: true, message: "User Verified Successfully!" });
     } catch (error) {
@@ -232,8 +211,11 @@ export const reverify = async (req, res) => {
         const otp = OTP_gen();
         existed_user.otp = otp;
         existed_user.otp_expiry = Date.now() + 5 * 60 * 1000;
-        await existed_user.save();
-        await sendOTPEmail(existed_user.email, otp);
+
+        await Promise.all([
+            existed_user.save(),
+            sendOTPEmail(existed_user.email, otp)
+        ]);
 
         return res.status(200).json({ success: true, message: "New OTP sent successfully." });
     } catch (error) {
@@ -247,11 +229,13 @@ export const changeUserStatus = async (req, res) => {
         const { status } = req.body;
         if (![true, false].includes(status)) return res.status(400).json({ success: false, message: "Invalid Status!" });
 
-        const user = await User.findById(id);
+        const user = await User.findByIdAndUpdate(
+            id,
+            { isActive: status },
+            { new: true }
+        );
         if (!user) return res.status(404).json({ success: false, message: "User Not Found in the Database!" });
 
-        user.isActive = status;
-        await user.save();
         return res.status(200).json({ success: true, message: "User Account Status Updated Successfully!", user });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -260,9 +244,34 @@ export const changeUserStatus = async (req, res) => {
 
 export const getalluserforadmin = async (req, res) => {
     try {
-        const users = await User.find();
-        if (!users) return res.status(404).json({ success: false, message: "No Users Found in the Database!" });
-        return res.status(200).json({ success: true, message: "Users Fetched Successfully!", users });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const search = req.query.search || null;
+        const skip = (page - 1) * limit;
+
+        const filter = {};
+        if (search) {
+            filter.$or = [
+                { firstname: { $regex: search, $options: "i" } },
+                { lastname: { $regex: search, $options: "i" } },
+                { email: { $regex: search, $options: "i" } }
+            ];
+        }
+
+        const [users, totalItems] = await Promise.all([
+            User.find(filter).skip(skip).limit(limit).sort({ createdAt: -1 }),
+            User.countDocuments(filter)
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            message: "Users Fetched Successfully!",
+            currentPage: page,
+            totalPages: Math.ceil(totalItems / limit),
+            totalItems,
+            itemsPerPage: limit,
+            users
+        });
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
     }
