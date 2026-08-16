@@ -8,10 +8,10 @@ import {
     reverify,
     UpdateUser,
     verifyOTP,
-    refreshToken,  // ✅ new import
-    logout         // ✅ new import
+    refreshToken,  
+    logout         
 } from "../Controllers/userController.js";
-import { isAdmin, protection, refreshTokenMiddleware } from "../Middleware/Middleware.js"; // ✅ new import
+import { isAdmin, protection, refreshTokenMiddleware } from "../Middleware/Middleware.js"; 
 
 const userRoutes = express.Router()
 
