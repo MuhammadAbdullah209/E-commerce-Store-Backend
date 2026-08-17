@@ -177,26 +177,26 @@ export const getOrderById = async (req, res) => {
 }
 export const getAllOrderForAdmin = async (req, res) => {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
+        const page  = parseInt(req.query.page)   || 1;
+        const limit = parseInt(req.query.limit)  || 10;
+        const skip  = (page - 1) * limit;
 
-        
         const [orders, totalItems] = await Promise.all([
             Order.find({ isArchived: false })
-                .populate("items.product")
-                .populate("user")
+                .populate("items.product", "name price image category") 
+                .populate("user", "firstname lastname email phno")      
                 .skip(skip)
                 .limit(limit)
-                .sort({ createdAt: -1 }),
+                .sort({ createdAt: -1 })
+                .lean(),        
             Order.countDocuments({ isArchived: false })
         ]);
 
         return res.status(200).json({
-            success: true,
-            message: "Orders Fetched Successfully!",
-            currentPage: page,
-            totalPages: Math.ceil(totalItems / limit),
+            success:      true,
+            message:      "Orders Fetched Successfully!",
+            currentPage:  page,
+            totalPages:   Math.ceil(totalItems / limit),
             totalItems,
             itemsPerPage: limit,
             orders
