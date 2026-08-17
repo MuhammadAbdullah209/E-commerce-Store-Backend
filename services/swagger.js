@@ -8,10 +8,16 @@ const options = {
             version: "1.0.0",
             description: "Backend API documentation for ecommerce app",
         },
+        
         servers: [
             {
-                url: "http://localhost:5000",
+                url: "https://e-commerce-store-backend-one.vercel.app",
+                description: "Production Server"
             },
+            {
+                url: "http://localhost:5000",
+                description: "Local Server"
+            }
         ],
         components: {
             securitySchemes: {
@@ -23,8 +29,7 @@ const options = {
             },
         },
     },
-
-    apis: ["./Routes/*.js", "./Controllers/*.js"], 
+    apis: ["./Routes/*.js", "./Controllers/*.js"],
 };
 
 export const swaggerSpec = swaggerJSDoc(options);
