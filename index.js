@@ -33,7 +33,7 @@ app.use(cors({
 app.use(express.json())
 app.use(cookieParser());
 app.use(logger)
-
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use(async (req, res, next) => {
     if (mongoose.connection.readyState === 1) {
         return next();
@@ -54,7 +54,7 @@ app.get("/", (req, res) => {
     })
 })
 
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
 app.use("/Api",     userRoutes)
 app.use("/Product", productRoutes)
 app.use("/Order",   orderrouter)
